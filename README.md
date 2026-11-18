@@ -1,71 +1,94 @@
-# PowerKeySwitch
+# PowerSwitch
 
-PowerKeySwitch is a proposed Windows utility for correcting text typed with the wrong keyboard layout. It translates selected text by physical keyboard position and can be used as the shared engine for a lightweight standalone app and a future Microsoft PowerToys integration.
+**Fix text typed with the wrong keyboard layout.**
 
-> **Development status:** A Windows tray app now supports explicit selection conversion with `Ctrl+Q`. This is not an official Microsoft PowerToys module. OCR, PowerToys IPC, and installer packaging are not implemented.
+PowerSwitch is a Windows system-tray utility that converts selected text between supported keyboard layouts by matching physical key positions. For example, it can turn text typed with the English layout into Arabic text, or the reverse.
 
-## Current capabilities
+**إصلاح النص المكتوب بتخطيط لوحة مفاتيح خاطئ.**
 
-- .NET 8 / C# 12 Windows Core library.
-- Dynamic HKL-based mapping using `VkKeyScanEx`, `MapVirtualKeyEx`, and `ToUnicodeEx`.
-- Non-mutating `ToUnicodeEx` probes (`TO_UNICODE_NO_STATE_CHANGE`, `0x0004`).
-- Deterministic fallback maps for Arabic 101/102, English US/UK QWERTY, French AZERTY, and Spanish QWERTY/ISO.
-- Longest-match Arabic ligature handling for `لا`, `لأ`, and `لإ`.
-- Preserves and reports unsupported characters.
-- Windows layout enumeration and non-activating layout loading helpers.
-- Tray application for user-triggered selected-text conversion, clipboard restoration, and optional per-user startup.
-- Custom application and notification-area icon featuring English and Arabic characters with two-way arrows.
+PowerSwitch أداة لنظام Windows تعمل من شريط المهام، وتحول النص المحدد بين تخطيطات لوحة المفاتيح المدعومة اعتمادًا على مواضع المفاتيح الفعلية. مثلًا، يمكنها تحويل نص كُتب بتخطيط الإنجليزية إلى العربية أو العكس.
 
-## Repository
+> PowerSwitch is an independent project. It is not an official Microsoft PowerToys module.
+>
+> PowerSwitch مشروع مستقل وليس وحدة رسمية من Microsoft PowerToys.
 
-```text
-config/                         Settings example and JSON Schema
-docs/                           Architecture and PowerToys RFC draft
-src/PowerSwitch.Core/           Layout discovery and translation engine
-src/PowerSwitch.App/            Windows tray app and explicit hotkey handling
-tests/PowerSwitch.Core.Tests/   Deterministic translation tests
-```
+## Demo
 
-See [docs/architecture.md](docs/architecture.md) and [docs/powertoys-rfc.md](docs/powertoys-rfc.md).
+![PowerSwitch demo: converting mistyped English-layout text to Arabic](docs/images/powerswitch-demo.gif)
 
-## Build and test
+## المميزات باختصار
 
-Requirements: Windows 10 version 1607 or later, .NET 8 SDK, and the Windows targeting pack. From the repository root:
+- تحويل النص المحدد بالاختصار `Ctrl+Q`.
+- التحويل حسب موضع المفتاح على لوحة المفاتيح، وليس عبر قاموس.
+- دعم تخطيطات الإنجليزية والعربية، مع خرائط احتياطية للإنجليزية الأمريكية والبريطانية، والعربية 101/102، والفرنسية AZERTY، والإسبانية.
+- إبقاء الأحرف غير المدعومة كما هي والإبلاغ عنها ضمن نتيجة التحويل.
+- العمل من منطقة الإشعارات مع إمكانية التشغيل عند تسجيل الدخول.
+- العمل محليًا؛ لا يُرسل النص المحدد إلى خادم ولا يُحفظ في سجل التطبيق.
 
-```powershell
-dotnet test .\PowerKeySwitch.sln
-```
+## Features
 
-The deterministic fallback tests do not require keyboard layouts to be installed. Native HKL tests should be run on Windows with the intended language packs installed.
+- Convert selected text with the `Ctrl+Q` shortcut.
+- Translate by physical keyboard position instead of dictionary lookup.
+- Support English and Arabic layouts, with fallback mappings for English US/UK, Arabic 101/102, French AZERTY, and Spanish layouts.
+- Preserve unsupported characters and report them in the translation result.
+- Run from the Windows notification area, with optional startup at sign-in.
+- Restore the clipboard after conversion when it has not been changed by another app.
+- Work locally; selected text is not sent to a server or written to an application log.
 
-## Run the Windows tray app
+## Requirements
 
-Requirements: Windows and the .NET 8 SDK. From the repository root:
+- 64-bit Windows.
+- At least two supported keyboard layouts installed in Windows.
+
+The self-contained build includes the .NET runtime, so end users do not need to install the .NET SDK or runtime separately.
+
+## Use
+
+1. Select text in an application.
+2. Press `Ctrl+Q`.
+3. PowerSwitch converts the selection to the next supported installed keyboard layout.
+
+The app runs in the notification area. Right-click its tray icon to change the startup setting or exit. If another app already uses `Ctrl+Q`, PowerSwitch reports that the shortcut could not be registered.
+
+## Install
+
+When a downloadable release is available, download and extract its setup package, then run `PowerSwitch.Installer.exe`. Keep the `Payload` folder beside the installer. Choose an installation folder and optional shortcuts in the setup window.
+
+The installer detects an existing installation, closes the app before replacing it, and registers an uninstall entry in Windows Apps & Features.
+
+## Build from source
+
+Requirements: Windows and the .NET 8 SDK.
+
+Run the app directly:
 
 ```powershell
 dotnet run --project .\src\PowerSwitch.App\PowerSwitch.App.csproj
 ```
 
-The app stays in the notification area. Select text in another app and press `Ctrl+Q`; it copies the selection, translates to the next supported installed keyboard layout, pastes the result, and restores the previous clipboard contents unless another app changed the clipboard in the meantime. Right-click the tray icon to disable startup or exit. On first run, startup is enabled for the current Windows user using `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`; no administrator rights are needed. The startup preference is saved separately under `HKCU\Software\PowerKeySwitch`. Install at least two supported keyboard layouts in Windows. If `Ctrl+Q` is already registered, the tray app reports that it could not claim the shortcut.
-
-To publish a Windows x64 build:
+Run the tests:
 
 ```powershell
-dotnet publish .\src\PowerSwitch.App\PowerSwitch.App.csproj -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true
+dotnet test .\tests\PowerSwitch.Core.Tests\PowerSwitch.Core.Tests.csproj
 ```
 
-For a per-user installation under `%LOCALAPPDATA%\Programs\PowerKeySwitch`, run `.\install.ps1` from PowerShell. It publishes the self-contained app and starts it; the app then registers itself for the current user's sign-in.
+Build a self-contained setup package:
 
-The app only reads selected text after the hotkey is pressed. It does not continuously inspect the screen, keep a text history, or send text elsewhere.
+```powershell
+$output = ".\PowerSwitch-Installer"
+New-Item -ItemType Directory -Path "$output\Payload" -Force | Out-Null
+dotnet publish .\src\PowerSwitch.App\PowerSwitch.App.csproj -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true /p:DebugType=none -o "$output\Payload"
+dotnet publish .\src\PowerSwitch.Installer\PowerSwitch.Installer.csproj -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true /p:DebugType=none -o $output
+```
 
-## Settings
+Keep the installer and `Payload` folder together. The self-contained package is larger because it includes the .NET runtime and Windows components.
 
-`config/settings.example.json` shows planned settings such as the hotkey (`Ctrl+Q`), supported layouts, target policy, and optional last-word selection shortcut. The tray app currently uses its built-in `Ctrl+Q` shortcut and cycles layouts installed in Windows.
+## Privacy
 
-## Privacy and status
+PowerSwitch does not continuously monitor the keyboard or screen. It reads the selected text only after the user presses the hotkey, uses the clipboard to replace the selection, and does not transmit text over the network.
 
-The translation core does not read the clipboard. The standalone app performs clipboard copy/paste only after the user presses the registered hotkey, works on the foreground selection, restores the previous clipboard data object, and never logs selected text. It does not install a keyboard hook or perform OCR. PowerToys integration requires adapting to the specific PowerToys source version and its internal module contracts; no stable third-party `IPowerToyModule` contract is assumed here.
+## Project status
 
-## License
+The Windows tray app and deterministic translation tests are implemented. OCR and PowerToys integration are not implemented.
 
-This project is not yet licensed. A license must be selected by the maintainers before distribution.
+No license has been selected yet. Until a license is added, do not assume the source is available for reuse or redistribution.

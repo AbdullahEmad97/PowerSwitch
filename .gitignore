@@ -4,6 +4,8 @@
 /PowerSwitch/
 /PowerSwitch-Installer/
 /PowerSwitch-Release-*/
+*.rar
+PowerSwitch-Setup-*.zip
 
 # IDE and local state
 .vs/
