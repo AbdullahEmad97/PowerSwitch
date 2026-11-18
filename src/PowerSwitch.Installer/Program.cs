@@ -1,7 +1,10 @@
 using Microsoft.Win32;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Runtime.Versioning;
 using System.Text;
+
+[assembly: SupportedOSPlatform("windows")]
 
 namespace PowerSwitch.Installer;
 
@@ -39,7 +42,11 @@ internal static class Program
             {
                 process.CloseMainWindow();
                 if (!process.WaitForExit(3000))
+                {
                     process.Kill();
+                    if (!process.WaitForExit(5000))
+                        throw new IOException("Could not close the running PowerSwitch process.");
+                }
             }
             catch (InvalidOperationException)
             {
@@ -112,6 +119,9 @@ internal sealed class InstallerForm : Form
         location.Location = new Point(20, 90);
         location.Width = 470;
         location.Text = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "PowerSwitch");
+        var existingInstallation = FindExistingInstallation();
+        if (existingInstallation is not null)
+            location.Text = existingInstallation;
 
         var browse = new Button { Text = "Browse...", Location = new Point(500, 88), Width = 90 };
         browse.Click += (_, _) =>
@@ -140,8 +150,8 @@ internal sealed class InstallerForm : Form
 
         var install = new Button
         {
-            Text = "Install",
-            DialogResult = DialogResult.OK,
+            Text = "Install / Update",
+            DialogResult = DialogResult.None,
             Location = new Point(390, 315),
             Width = 90
         };
@@ -150,11 +160,12 @@ internal sealed class InstallerForm : Form
         var cancel = new Button
         {
             Text = "Cancel",
-            DialogResult = DialogResult.Cancel,
+            DialogResult = DialogResult.None,
             Location = new Point(500, 315),
             Width = 90
         };
         cancel.Click += (_, _) => Close();
+        CancelButton = cancel;
 
         Controls.AddRange(new Control[]
         {
@@ -167,10 +178,13 @@ internal sealed class InstallerForm : Form
     {
         installButton.Enabled = false;
         progress.Visible = true;
-        status.Text = "Removing previous versions and preparing installation...";
+        var target = location.Text.Trim();
+        status.Text = FindExistingInstallation() is not null
+            ? "Closing and removing the existing installation..."
+            : "No previous installation found. Preparing installation...";
         try
         {
-            await Task.Run(() => Install(location.Text.Trim()));
+            await Task.Run(() => Install(target));
             progress.Visible = false;
             installButton.Enabled = true;
             MessageBox.Show(this, "PowerSwitch was installed successfully.", "Installation complete",
@@ -203,9 +217,11 @@ internal sealed class InstallerForm : Form
         if (!File.Exists(Path.Combine(payload, "PowerSwitch.App.exe")))
             throw new InvalidOperationException("The application payload is missing. Extract the complete release package before running setup.");
 
+        var previousInstallation = GetRegisteredInstallationLocation();
         StopExistingInstances();
         RemoveRegistryEntry();
-        RemoveKnownOldDirectories(destination);
+        RemoveUninstallRegistration();
+        RemovePreviousInstallations(previousInstallation);
         Directory.CreateDirectory(destination);
 
         CopyApplicationPayload(payload, destination);
@@ -240,6 +256,31 @@ internal sealed class InstallerForm : Form
             Process.Start(new ProcessStartInfo(executable) { UseShellExecute = true });
     }
 
+    private static string? FindExistingInstallation()
+    {
+        using var key = Registry.CurrentUser.OpenSubKey(@"Software\PowerKeySwitch");
+        var path = key?.GetValue("InstallLocation") as string;
+        if (!string.IsNullOrWhiteSpace(path) &&
+            File.Exists(Path.Combine(path, "PowerSwitch.App.exe")))
+        {
+            return path;
+        }
+
+        var defaultPaths = new[]
+        {
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "PowerSwitch"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "PowerKeySwitch")
+        };
+        return defaultPaths.FirstOrDefault(candidate =>
+            File.Exists(Path.Combine(candidate, "PowerSwitch.App.exe")));
+    }
+
+    private static string? GetRegisteredInstallationLocation()
+    {
+        using var key = Registry.CurrentUser.OpenSubKey(@"Software\PowerKeySwitch");
+        return key?.GetValue("InstallLocation") as string;
+    }
+
     private void StopExistingInstances()
     {
         foreach (var process in Process.GetProcessesByName("PowerSwitch.App"))
@@ -248,42 +289,43 @@ internal sealed class InstallerForm : Form
             {
                 process.CloseMainWindow();
                 if (!process.WaitForExit(3000))
+                {
                     process.Kill();
+                    if (!process.WaitForExit(5000))
+                        throw new IOException("Could not close the running PowerSwitch process.");
+                }
             }
-            catch
+            catch (InvalidOperationException)
             {
             }
         }
     }
 
-    private void RemoveKnownOldDirectories(string destination)
+    private void RemovePreviousInstallations(string? registeredPath)
     {
-        var oldDirectories = new[]
-        {
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "PowerKeySwitch"),
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "PowerSwitch")
-        };
+        var previousDirectories = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (!string.IsNullOrWhiteSpace(registeredPath))
+            previousDirectories.Add(Path.GetFullPath(registeredPath));
 
-        foreach (var directory in oldDirectories.Distinct(StringComparer.OrdinalIgnoreCase)
-                     .Where(path => path.Length > 3 &&
-                                    !string.Equals(Path.GetFullPath(path), Path.GetFullPath(destination), StringComparison.OrdinalIgnoreCase)))
+        previousDirectories.Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "PowerKeySwitch"));
+        previousDirectories.Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "PowerSwitch"));
+
+        foreach (var directory in previousDirectories)
         {
-            RemoveDirectory(directory);
+            if (directory.Length > 3 &&
+                !string.Equals(directory, Path.GetPathRoot(directory), StringComparison.OrdinalIgnoreCase) &&
+                File.Exists(Path.Combine(directory, "PowerSwitch.App.exe")))
+            {
+                Directory.Delete(directory, true);
+            }
         }
-
     }
 
-    private static void RemoveDirectory(string directory)
+    private static void RemoveUninstallRegistration()
     {
-        if (!Directory.Exists(directory))
-            return;
-        try
-        {
-            Directory.Delete(directory, true);
-        }
-        catch (IOException)
-        {
-        }
+        using var key = Registry.CurrentUser.OpenSubKey(
+            @"Software\Microsoft\Windows\CurrentVersion\Uninstall", true);
+        key?.DeleteSubKeyTree("PowerSwitch", false);
     }
 
     private static void CopyApplicationPayload(string payload, string destination)
@@ -300,9 +342,9 @@ internal sealed class InstallerForm : Form
     private static void CreateShortcut(string linkPath, string executable, string workingDirectory)
     {
         var shellType = Type.GetTypeFromProgID("WScript.Shell")
-            ?? throw new InvalidOperationException("تعذر إنشاء اختصارات Windows.");
+            ?? throw new InvalidOperationException("Could not create Windows shortcuts.");
         dynamic shell = Activator.CreateInstance(shellType)
-            ?? throw new InvalidOperationException("تعذر تشغيل خدمة اختصارات Windows.");
+            ?? throw new InvalidOperationException("Could not start the Windows shortcut service.");
         var shortcut = shell.CreateShortcut(linkPath);
         shortcut.TargetPath = executable;
         shortcut.WorkingDirectory = workingDirectory;
