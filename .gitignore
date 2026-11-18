@@ -3,6 +3,7 @@
 **/obj/
 /PowerSwitch/
 /PowerSwitch-Installer/
+/PowerSwitch-Release-*/
 
 # IDE and local state
 .vs/
