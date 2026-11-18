@@ -14,7 +14,9 @@ PowerSwitch أداة لنظام Windows تعمل من شريط المهام، و
 
 ## Demo
 
-![PowerSwitch demo: converting mistyped English-layout text to Arabic](docs/images/powerswitch-demo.gif)
+![PowerSwitch instantly converts text in both directions: English to Arabic and Arabic to English](docs/images/powerswitch-demo.gif)
+
+The demo shows both directions. Each conversion appears instantly, as it does in the app.
 
 ## المميزات باختصار
 
