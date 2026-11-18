@@ -178,8 +178,7 @@ internal sealed class InstallerForm : Form
         var oldDirectories = new[]
         {
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "PowerKeySwitch"),
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "PowerSwitch"),
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "OneDrive", "Documents", "vscode", "PowerSwitch")
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "PowerSwitch")
         };
 
         foreach (var directory in oldDirectories.Distinct(StringComparer.OrdinalIgnoreCase)

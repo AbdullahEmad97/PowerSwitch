@@ -7,5 +7,6 @@
     <Nullable>enable</Nullable>
     <LangVersion>12.0</LangVersion>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <DebugType>none</DebugType>
   </PropertyGroup>
 </Project>

@@ -8,6 +8,7 @@
     <LangVersion>12.0</LangVersion>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <ApplicationIcon>Assets\PowerKeySwitch.ico</ApplicationIcon>
+    <DebugType>none</DebugType>
   </PropertyGroup>
   <ItemGroup>
     <EmbeddedResource Include="Assets\PowerKeySwitch.ico" LogicalName="PowerSwitch.App.PowerKeySwitch.ico" />
