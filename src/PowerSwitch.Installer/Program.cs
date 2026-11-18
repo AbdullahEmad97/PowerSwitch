@@ -1,6 +1,7 @@
 using Microsoft.Win32;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Text;
 
 namespace PowerSwitch.Installer;
 
@@ -10,23 +11,90 @@ internal static class Program
     private static void Main()
     {
         ApplicationConfiguration.Initialize();
+        if (Environment.GetCommandLineArgs().Any(arg => arg.Equals("--uninstall", StringComparison.OrdinalIgnoreCase)))
+        {
+            Uninstall();
+            return;
+        }
+
         Application.Run(new InstallerForm());
+    }
+
+    private static void Uninstall()
+    {
+        string? installLocation;
+        using (var appKey = Registry.CurrentUser.OpenSubKey(@"Software\PowerKeySwitch"))
+            installLocation = appKey?.GetValue("InstallLocation") as string;
+
+        using (var runKey = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run", true))
+            runKey?.DeleteValue("PowerKeySwitch", false);
+        using (var uninstallKey = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Uninstall", true))
+            uninstallKey?.DeleteSubKeyTree("PowerSwitch", false);
+        using (var softwareKey = Registry.CurrentUser.OpenSubKey(@"Software", true))
+            softwareKey?.DeleteSubKeyTree("PowerKeySwitch", false);
+
+        foreach (var process in Process.GetProcessesByName("PowerSwitch.App"))
+        {
+            try
+            {
+                process.CloseMainWindow();
+                if (!process.WaitForExit(3000))
+                    process.Kill();
+            }
+            catch (InvalidOperationException)
+            {
+            }
+        }
+
+        RemoveShortcut(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "PowerSwitch.lnk"));
+        RemoveShortcut(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "Microsoft", "Windows", "Start Menu", "Programs", "PowerSwitch.lnk"));
+
+        if (!string.IsNullOrWhiteSpace(installLocation) &&
+            File.Exists(Path.Combine(installLocation, "PowerSwitch.App.exe")))
+            ScheduleDirectoryRemoval(installLocation);
+
+        MessageBox.Show("PowerSwitch was uninstalled.", "PowerSwitch",
+            MessageBoxButtons.OK, MessageBoxIcon.Information);
+    }
+
+    private static void ScheduleDirectoryRemoval(string directory)
+    {
+        var fullPath = Path.GetFullPath(directory);
+        if (fullPath.Length < 4 || string.Equals(fullPath, Path.GetPathRoot(fullPath), StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("The uninstall folder is invalid.");
+
+        var escapedPath = fullPath.Replace("'", "''");
+        var script = $"Start-Sleep -Seconds 2; Remove-Item -LiteralPath '{escapedPath}' -Recurse -Force";
+        var encoded = Convert.ToBase64String(Encoding.Unicode.GetBytes(script));
+        Process.Start(new ProcessStartInfo("powershell.exe",
+            $"-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -EncodedCommand {encoded}")
+        {
+            UseShellExecute = false,
+            CreateNoWindow = true
+        });
+    }
+
+    private static void RemoveShortcut(string path)
+    {
+        if (File.Exists(path))
+            File.Delete(path);
     }
 }
 
 internal sealed class InstallerForm : Form
 {
     private readonly TextBox location = new();
-    private readonly CheckBox desktopShortcut = new() { Text = "إنشاء اختصار على سطح المكتب", Checked = true };
-    private readonly CheckBox startMenuShortcut = new() { Text = "إنشاء اختصار في قائمة البداية", Checked = true };
-    private readonly CheckBox startup = new() { Text = "تشغيل PowerSwitch عند تسجيل الدخول", Checked = true };
-    private readonly CheckBox launch = new() { Text = "تشغيل التطبيق بعد التنصيب", Checked = true };
+    private readonly CheckBox desktopShortcut = new() { Text = "Create Desktop shortcut", Checked = true };
+    private readonly CheckBox startMenuShortcut = new() { Text = "Create Start Menu shortcut", Checked = true };
+    private readonly CheckBox startup = new() { Text = "Run PowerSwitch at Windows login", Checked = true };
+    private readonly CheckBox launch = new() { Text = "Launch PowerSwitch after installation", Checked = true };
     private readonly ProgressBar progress = new() { Style = ProgressBarStyle.Marquee, Visible = false };
     private readonly Label status = new() { AutoSize = true };
 
     public InstallerForm()
     {
-        Text = "مثبت PowerSwitch";
+        Text = "PowerSwitch Installer";
         Size = new Size(620, 390);
         StartPosition = FormStartPosition.CenterScreen;
         MinimumSize = Size;
@@ -35,22 +103,22 @@ internal sealed class InstallerForm : Form
 
         var title = new Label
         {
-            Text = "تنصيب PowerSwitch",
+            Text = "Install PowerSwitch",
             Font = new Font(Font.FontFamily, 16, FontStyle.Bold),
             AutoSize = true,
             Location = new Point(20, 15)
         };
-        var locationLabel = new Label { Text = "مكان التنصيب:", AutoSize = true, Location = new Point(20, 65) };
+        var locationLabel = new Label { Text = "Installation folder:", AutoSize = true, Location = new Point(20, 65) };
         location.Location = new Point(20, 90);
         location.Width = 470;
         location.Text = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "PowerSwitch");
 
-        var browse = new Button { Text = "تحديد المجلد...", Location = new Point(500, 88), Width = 90 };
+        var browse = new Button { Text = "Browse...", Location = new Point(500, 88), Width = 90 };
         browse.Click += (_, _) =>
         {
             using var dialog = new FolderBrowserDialog
             {
-                Description = "اختر مجلد تنصيب PowerSwitch",
+                Description = "Select the PowerSwitch installation folder",
                 SelectedPath = location.Text
             };
             if (dialog.ShowDialog(this) == DialogResult.OK)
@@ -72,7 +140,7 @@ internal sealed class InstallerForm : Form
 
         var install = new Button
         {
-            Text = "تنصيب",
+            Text = "Install",
             DialogResult = DialogResult.OK,
             Location = new Point(390, 315),
             Width = 90
@@ -81,11 +149,12 @@ internal sealed class InstallerForm : Form
 
         var cancel = new Button
         {
-            Text = "إلغاء",
+            Text = "Cancel",
             DialogResult = DialogResult.Cancel,
             Location = new Point(500, 315),
             Width = 90
         };
+        cancel.Click += (_, _) => Close();
 
         Controls.AddRange(new Control[]
         {
@@ -98,13 +167,13 @@ internal sealed class InstallerForm : Form
     {
         installButton.Enabled = false;
         progress.Visible = true;
-        status.Text = "جارٍ إزالة النسخ السابقة وتجهيز التنصيب...";
+        status.Text = "Removing previous versions and preparing installation...";
         try
         {
             await Task.Run(() => Install(location.Text.Trim()));
             progress.Visible = false;
             installButton.Enabled = true;
-            MessageBox.Show(this, "تم تنصيب PowerSwitch بنجاح.", "اكتمل التنصيب",
+            MessageBox.Show(this, "PowerSwitch was installed successfully.", "Installation complete",
                 MessageBoxButtons.OK, MessageBoxIcon.Information);
             Close();
         }
@@ -112,8 +181,8 @@ internal sealed class InstallerForm : Form
         {
             progress.Visible = false;
             installButton.Enabled = true;
-            status.Text = "تعذر التنصيب.";
-            MessageBox.Show(this, exception.Message, "فشل التنصيب",
+            status.Text = "Installation failed.";
+            MessageBox.Show(this, exception.Message, "Installation failed",
                 MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
@@ -121,20 +190,33 @@ internal sealed class InstallerForm : Form
     private void Install(string destination)
     {
         if (string.IsNullOrWhiteSpace(destination))
-            throw new InvalidOperationException("يرجى تحديد مكان التنصيب.");
+            throw new InvalidOperationException("Please select an installation folder.");
+
+        destination = Path.GetFullPath(destination);
+        var root = Path.GetPathRoot(destination);
+        if (string.IsNullOrWhiteSpace(root) || !Directory.Exists(root))
+            throw new InvalidOperationException("The selected partition does not exist or is unavailable.");
+        if (string.Equals(destination, root, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Choose a folder below the drive root.");
+
+        var payload = Path.Combine(AppContext.BaseDirectory, "Payload");
+        if (!File.Exists(Path.Combine(payload, "PowerSwitch.App.exe")))
+            throw new InvalidOperationException("The application payload is missing. Extract the complete release package before running setup.");
 
         StopExistingInstances();
         RemoveRegistryEntry();
         RemoveKnownOldDirectories(destination);
         Directory.CreateDirectory(destination);
 
-        var solutionRoot = FindRepositoryRoot();
-        var appProject = Path.Combine(solutionRoot, "src", "PowerSwitch.App", "PowerSwitch.App.csproj");
-        RunDotnetPublish(appProject, destination);
+        CopyApplicationPayload(payload, destination);
 
         var executable = Path.Combine(destination, "PowerSwitch.App.exe");
         if (!File.Exists(executable))
-            throw new InvalidOperationException("تعذر العثور على التطبيق المنشور.");
+            throw new InvalidOperationException("The application package is incomplete.");
+        var uninstaller = Path.Combine(destination, "PowerSwitch.Uninstaller.exe");
+        var currentInstaller = Environment.ProcessPath
+            ?? throw new InvalidOperationException("Could not determine the installer path.");
+        File.Copy(currentInstaller, uninstaller, true);
 
         RemoveShortcut(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "PowerSwitch.lnk"));
         var startDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
@@ -152,6 +234,7 @@ internal sealed class InstallerForm : Form
             RemoveRegistryEntry();
 
         SaveInstallLocation(destination);
+        RegisterWindowsUninstallEntry(destination, executable);
 
         if (launch.Checked)
             Process.Start(new ProcessStartInfo(executable) { UseShellExecute = true });
@@ -188,16 +271,6 @@ internal sealed class InstallerForm : Form
             RemoveDirectory(directory);
         }
 
-        if (Directory.Exists(destination))
-        {
-            foreach (var child in Directory.EnumerateFileSystemEntries(destination))
-            {
-                if (Directory.Exists(child))
-                    Directory.Delete(child, true);
-                else
-                    File.Delete(child);
-            }
-        }
     }
 
     private static void RemoveDirectory(string directory)
@@ -213,41 +286,15 @@ internal sealed class InstallerForm : Form
         }
     }
 
-    private static void RunDotnetPublish(string project, string destination)
+    private static void CopyApplicationPayload(string payload, string destination)
     {
-        var process = Process.Start(new ProcessStartInfo("dotnet")
+        foreach (var sourceFile in Directory.EnumerateFiles(payload, "*", SearchOption.AllDirectories))
         {
-            ArgumentList =
-            {
-                "publish", project,
-                "-c", "Release",
-                "-r", "win-x64",
-                "--self-contained", "true",
-                "/p:PublishSingleFile=true",
-                "-o", destination
-            },
-            UseShellExecute = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            CreateNoWindow = true
-        }) ?? throw new InvalidOperationException("تعذر تشغيل dotnet.");
-        var output = process.StandardOutput.ReadToEnd();
-        var error = process.StandardError.ReadToEnd();
-        process.WaitForExit();
-        if (process.ExitCode != 0)
-            throw new InvalidOperationException($"فشل نشر التطبيق:\n{error}\n{output}");
-    }
-
-    private static string FindRepositoryRoot()
-    {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory is not null)
-        {
-            if (File.Exists(Path.Combine(directory.FullName, "PowerKeySwitch.sln")))
-                return directory.FullName;
-            directory = directory.Parent;
+            var relativePath = Path.GetRelativePath(payload, sourceFile);
+            var targetFile = Path.Combine(destination, relativePath);
+            Directory.CreateDirectory(Path.GetDirectoryName(targetFile)!);
+            File.Copy(sourceFile, targetFile, true);
         }
-        throw new InvalidOperationException("تعذر العثور على مجلد المشروع.");
     }
 
     private static void CreateShortcut(string linkPath, string executable, string workingDirectory)
@@ -285,5 +332,21 @@ internal sealed class InstallerForm : Form
     {
         using var key = Registry.CurrentUser.CreateSubKey(@"Software\PowerKeySwitch", true);
         key?.SetValue("InstallLocation", destination);
+    }
+
+    private static void RegisterWindowsUninstallEntry(string destination, string executable)
+    {
+        var installerPath = Path.Combine(destination, "PowerSwitch.Uninstaller.exe");
+        using var key = Registry.CurrentUser.CreateSubKey(
+            @"Software\Microsoft\Windows\CurrentVersion\Uninstall\PowerSwitch", true)
+            ?? throw new InvalidOperationException("Could not register PowerSwitch for uninstall.");
+        key.SetValue("DisplayName", "PowerSwitch");
+        key.SetValue("DisplayIcon", executable);
+        key.SetValue("DisplayVersion", "1.0.0");
+        key.SetValue("Publisher", "PowerSwitch");
+        key.SetValue("InstallLocation", destination);
+        key.SetValue("UninstallString", $"\"{installerPath}\" --uninstall");
+        key.SetValue("NoModify", 1, RegistryValueKind.DWord);
+        key.SetValue("NoRepair", 1, RegistryValueKind.DWord);
     }
 }
