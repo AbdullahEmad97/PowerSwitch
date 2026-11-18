@@ -1,0 +1,25 @@
+# Build output
+**/bin/
+**/obj/
+/PowerSwitch/
+/PowerSwitch-Installer/
+
+# IDE and local state
+.vs/
+.vscode/
+*.user
+*.suo
+
+# Flutter/Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+build/
+
+# Unrelated local workspace folders
+/digital product app/
+/Digital-market/
+/flutter
+/flutter-sdk/
+/keylogger/

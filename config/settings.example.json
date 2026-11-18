@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "hotkey": {
+    "modifiers": [ "Control" ],
+    "key": "Q"
+  },
+  "enabledLayouts": [
+    "Arabic101",
+    "EnglishQwerty",
+    "FrenchAzerty",
+    "SpanishQwerty"
+  ],
+  "targetSelection": "NextEnabledLayout",
+  "selectionFallback": {
+    "mode": "SelectLastWord",
+    "selectWith": [ "Control", "Shift", "Left" ]
+  },
+  "restoreClipboard": true
+}

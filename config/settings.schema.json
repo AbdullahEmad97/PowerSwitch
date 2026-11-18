@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:powerkeyswitch:settings.schema.json",
+  "title": "PowerKeySwitch settings",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [ "schemaVersion", "hotkey", "enabledLayouts", "targetSelection", "selectionFallback", "restoreClipboard" ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "hotkey": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [ "modifiers", "key" ],
+      "properties": {
+        "modifiers": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "enum": [ "Control", "Shift", "Alt", "Windows" ] },
+          "minItems": 1
+        },
+        "key": { "type": "string", "pattern": "^[A-Z0-9]$" }
+      }
+    },
+    "enabledLayouts": {
+      "type": "array",
+      "uniqueItems": true,
+      "minItems": 2,
+      "items": { "enum": [ "Arabic101", "Arabic102", "EnglishQwerty", "EnglishQwertyUk", "FrenchAzerty", "SpanishQwerty" ] }
+    },
+    "targetSelection": { "enum": [ "NextEnabledLayout", "MostRecentDifferentLayout" ] },
+    "selectionFallback": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [ "mode", "selectWith" ],
+      "properties": {
+        "mode": { "enum": [ "Disabled", "SelectLastWord" ] },
+        "selectWith": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "enum": [ "Control", "Shift", "Left" ] },
+          "minItems": 3,
+          "maxItems": 3
+        }
+      }
+    },
+    "restoreClipboard": { "type": "boolean" }
+  }
+}
